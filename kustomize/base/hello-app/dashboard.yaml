@@ -1,0 +1,68 @@
+# Дашборд hello-app для Grafana: провижинится sidecar'ом автоматически
+# (лейбл grafana_dashboard: "1", sidecar сканирует все namespace).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-app-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  hello-app.json: |
+    {
+      "title": "hello-app",
+      "uid": "hello-app",
+      "schemaVersion": 39,
+      "editable": true,
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "DS_PROMETHEUS",
+            "label": "Prometheus",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": { "text": "Prometheus", "value": "prometheus" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "RPS",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "targets": [ { "expr": "sum(rate(app_http_requests_total[5m]))", "refId": "A" } ]
+        },
+        {
+          "id": 2,
+          "title": "Запросы по статусам",
+          "type": "timeseries",
+          "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "targets": [
+            { "expr": "sum(rate(app_http_requests_total[5m])) by (status)", "refId": "A", "legendFormat": "{{status}}" }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Задержка p50 / p95",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, sum(rate(app_http_request_duration_seconds_bucket[5m])) by (le))", "refId": "A", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, sum(rate(app_http_request_duration_seconds_bucket[5m])) by (le))", "refId": "B", "legendFormat": "p95" }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Поды hello-app (up)",
+          "type": "stat",
+          "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "targets": [ { "expr": "sum(up{job=\"hello-app\"})", "refId": "A" } ]
+        }
+      ]
+    }
