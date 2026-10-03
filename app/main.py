@@ -66,7 +66,7 @@ def hello():
     # Главный проверяемый ответ: Hello World!
     # HOSTNAME в поде Kubernetes = имя пода
     pod = os.environ.get("HOSTNAME", "unknown")
-    return f"Hello World! (pod: {pod})\n"
+    return f"Привет мир! (pod: {pod})\n"
 
 
 @app.route("/health")
