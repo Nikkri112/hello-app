@@ -57,9 +57,13 @@ jobs:
       - name: Smoke test in container
         run: |
           docker run -d --name smoke -p 8080:80 ${{ env.IMAGE }}:ci
-          # --retry-all-errors обязателен: docker-proxy сбрасывает соединение,
-          # пока gunicorn ещё не поднялся (это не "refused", обычный --retry не сработает)
-          curl --retry 15 --retry-all-errors --retry-delay 1 -fsS http://localhost:8080/health
+          # Ждём готовности gunicorn: docker-proxy сбрасывает соединение,
+          # пока бэкенд не поднялся (это не "refused", обычный --retry не ретраит)
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:8080/health 2>/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/health
           curl -fsS http://localhost:8080/hello | grep -q "Hello World!"
           docker rm -f smoke
 
