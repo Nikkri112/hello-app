@@ -15,4 +15,4 @@ resources:
 # ставит тег = git sha, а Kustomize подставляет его вместо тега из deployment.yaml.
 images:
   - name: docker.io/nikkiraii/hello-app
-    newTag: 2.1
+    newTag: "2.1"

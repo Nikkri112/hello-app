@@ -25,7 +25,7 @@ jobs:
       - name: Update image tag in kustomize
         run: |
           SHA="${{ github.event.workflow_run.head_sha }}"
-          sed -i "s|newTag: .*|newTag: ${SHA}|" kustomize/base/hello-app/kustomization.yaml
+          sed -i "s|newTag: .*|newTag: \"${SHA}\"|" kustomize/base/hello-app/kustomization.yaml
           echo "Новый тег образа:"
           grep newTag kustomize/base/hello-app/kustomization.yaml
 
