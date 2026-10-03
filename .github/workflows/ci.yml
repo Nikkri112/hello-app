@@ -64,7 +64,11 @@ jobs:
             sleep 1
           done
           curl -fsS http://localhost:8080/health
-          curl -fsS http://localhost:8080/hello | grep -q "Hello World!"
+          # Текст ответа /hello может меняться (так тестируют CD) -
+          # проверяем что эндпоинт жив и отдаёт непустой ответ
+          RESP=$(curl -fsS http://localhost:8080/hello)
+          if [ -z "${RESP}" ]; then echo "FAIL: пустой ответ /hello"; exit 1; fi
+          echo "Ответ: ${RESP}"
           docker rm -f smoke
 
       - name: Login to Docker Hub
