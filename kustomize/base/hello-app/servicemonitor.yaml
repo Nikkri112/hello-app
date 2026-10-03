@@ -1,0 +1,18 @@
+# ServiceMonitor - указывает Prometheus-operator скрейпить метрики приложения (/metrics).
+# Лейбл release обязателен: selector Prometheus из kube-prometheus-stack выбирает
+# только ServiceMonitor с этим лейблом (helm-дефолт serviceMonitorSelectorNilUsesHelmValues).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: hello-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

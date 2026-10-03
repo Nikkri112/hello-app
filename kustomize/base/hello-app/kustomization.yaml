@@ -10,6 +10,7 @@ resources:
   - service.yaml
   - gateway.yaml
   - httproute.yaml
+  - servicemonitor.yaml
 
 # Тег образа управляется CD-пайплайном (workflow cd.yml): после сборки CI
 # ставит тег = git sha, а Kustomize подставляет его вместо тега из deployment.yaml.
