@@ -1,0 +1,9 @@
+# L2Advertisement: MetalLB анонсирует адреса пула по ARP (L2-режим).
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: wsl-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - wsl-pool

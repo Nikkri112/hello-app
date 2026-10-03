@@ -1,0 +1,37 @@
+# Конфиг Filebeat 9.x: собирает логи только hello-app и выводит в свой stdout.
+# Проверка Шага 5: запрос к приложению -> запись в kubectl logs ds/filebeat.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: logging
+data:
+  filebeat.yml: |-
+    filebeat.inputs:
+      # Filebeat 9.x: input "container" удалён - используем filestream с парсером CRI
+      - type: filestream
+        id: hello-app-logs
+        paths:
+          # подчёркивание после hello-app отсекает файлы envoy-гейтвея
+          # (иначе ловим его shutdown-manager и постоянный warn "file is too small")
+          - /var/log/containers/*hello-app_*.log
+        # логи Kubernetes - это symlinks, нужно разрешить их чтение
+        prospector.scanner.symlinks: true
+        # файлы меньше 1024 байт не харвестятся - снижаем порог fingerprint
+        prospector.scanner.fingerprint.length: 256
+        parsers:
+          - container:
+              format: cri
+        processors:
+          - add_kubernetes_metadata:
+              host: ${NODE_NAME}
+              matchers:
+                - logs_path:
+                    logs_path: "/var/log/containers/"
+
+    # Точка назначения: вывод в консоль (stdout) сборщика
+    output.console:
+      codec.json:
+        pretty: false
+
+    logging.level: info

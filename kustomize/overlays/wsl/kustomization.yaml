@@ -1,0 +1,12 @@
+# Слой среды WSL - точка входа всего развёртывания своих манифестов:
+#   kubectl apply -k kustomize/overlays/wsl
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  # Патч генерится deploy.sh из текущей подсети WSL (см. вычисление в deploy.sh)
+  - path: patches/lb-pool.yaml
+    target:
+      kind: IPAddressPool
+      name: wsl-pool

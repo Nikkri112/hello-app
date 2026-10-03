@@ -1,0 +1,49 @@
+# DaemonSet - Filebeat на каждой ноде; читает /var/log/containers с ноды.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: logging
+  labels:
+    app: filebeat
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      serviceAccountName: filebeat
+      containers:
+        - name: filebeat
+          image: docker.elastic.co/beats/filebeat:9.2.0
+          imagePullPolicy: IfNotPresent
+          # -c: путь к конфигу, -e: логи в stderr (видны в kubectl logs)
+          args: ["-c", "/etc/filebeat.yml", "-e"]
+          env:
+            - name: NODE_NAME              # сюда подставится имя ноды
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: config
+              mountPath: /etc/filebeat.yml
+              subPath: filebeat.yml
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: filebeat-config

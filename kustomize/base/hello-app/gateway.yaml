@@ -1,0 +1,16 @@
+# Gateway API - точка входа для HTTP-трафика извне.
+# Класс eg - управляется Envoy Gateway (ставится helm'ом, см. deploy.sh).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: hello-gateway
+  namespace: hello-app
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

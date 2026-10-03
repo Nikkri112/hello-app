@@ -1,0 +1,8 @@
+# GatewayClass eg - без него Envoy Gateway не принимает Gateway'и
+# (helm-чарт gateway-helm GatewayClass НЕ создаёт, поэтому он здесь).
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller

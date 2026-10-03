@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Приватный CA-сертификат кластера (публичная информация, но в репо не нужен -
+# живёт локально и в секрете root-ca-secret внутри кластера)
+k8s-homelab-root-ca.crt

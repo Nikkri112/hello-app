@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+resources:
+  - namespace.yaml
+  - gatewayclass.yaml
+  - deployment.yaml
+  - service.yaml
+  - gateway.yaml
+  - httproute.yaml
+
+# Тег образа управляется CD-пайплайном (workflow cd.yml): после сборки CI
+# ставит тег = git sha, а Kustomize подставляет его вместо тега из deployment.yaml.
+images:
+  - name: docker.io/nikkiraii/hello-app
+    newTag: 2.1

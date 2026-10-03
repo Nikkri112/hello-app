@@ -1,0 +1,33 @@
+# Приватный CA (аналог корпоративного центра сертификации):
+# selfsigned-issuer -> корневой CA-сертификат -> CA-issuer, выпускающий листовые сертификаты.
+# Let's Encrypt здесь неприменим: требует публичного домена, а WSL - приватная сеть.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: root-ca
+  namespace: cert-manager    # ClusterIssuer ищет CA-секрет в ns cert-manager (--cluster-resource-namespace)
+spec:
+  isCA: true
+  commonName: k8s-homelab-root-ca
+  secretName: root-ca-secret
+  duration: 87600h                       # 10 лет
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: grafana-ca
+spec:
+  ca:
+    secretName: root-ca-secret

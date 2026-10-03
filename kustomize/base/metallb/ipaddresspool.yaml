@@ -1,0 +1,10 @@
+# Пул адресов MetalLB. Диапазон-заглушка: deploy.sh пересчитывает его
+# из текущей подсети WSL и патчит через overlays/wsl/patches/lb-pool.yaml.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: wsl-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 172.26.31.200-172.26.31.240

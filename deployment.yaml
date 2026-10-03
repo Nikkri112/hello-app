@@ -1,0 +1,56 @@
+# Deployment - запускает и следит за подами с нашим Python REST API.
+# 2 копии (реплики) для надёжности.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  replicas: 2                          # сколько копий пода запустить
+
+  selector:
+    matchLabels:
+      app: hello-app                   # как Deployment находит свои поды
+
+  template:
+    metadata:
+      labels:
+        app: hello-app                 # метки должны совпадать с selector
+    spec:
+      containers:
+        - name: hello-app
+          # Публичный образ в Docker Hub (собран из этого репозитория)
+          image: docker.io/nikkiraii/hello-app:2.1
+          imagePullPolicy: IfNotPresent
+
+          # Порт, который слушает приложение внутри контейнера
+          ports:
+            - name: http
+              containerPort: 80
+
+          # Проверка живости: если /health перестанет отвечать - под перезапустят
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          # Проверка готовности: пока /health не ответит - трафик на под не пойдёт
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+          # Ограничения по ресурсам
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

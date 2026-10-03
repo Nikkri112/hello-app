@@ -1,0 +1,10 @@
+# Values для kube-prometheus-stack (Prometheus, Alertmanager, Grafana,
+# kube-state-metrics, node-exporter).
+# Текущий кластер установлен на дефолтных значениях (helm get values: null),
+# поэтому файл пустой. Сюда можно добавлять кастомизации, например:
+#
+# grafana:
+#   adminPassword: "my-secret"
+# prometheus:
+#   prometheusSpec:
+#     retention: 7d

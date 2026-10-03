@@ -1,0 +1,21 @@
+# HTTPS- Gateway для Grafana: TLS терминируется на envoy-прокси,
+# сертификат берётся из секрета grafana-tls (выпускает cert-manager).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: grafana-gateway
+  namespace: monitoring
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: grafana.hello-app
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: grafana-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

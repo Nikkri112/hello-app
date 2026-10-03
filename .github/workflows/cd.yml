@@ -1,0 +1,42 @@
+# CD: после успешного CI в main обновляем тег образа в kustomize-манифестах.
+# Flux в кластере следит за этим репо и сам применит изменение (GitOps).
+# Циклов нет: коммит CD меняет только kustomize/ (CI реагирует на app/ и Dockerfile),
+# а пуш через GITHUB_TOKEN вообще не триггерит другие workflows.
+name: cd
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump-image:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update image tag in kustomize
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          sed -i "s|newTag: .*|newTag: ${SHA}|" kustomize/base/hello-app/kustomization.yaml
+          echo "Новый тег образа:"
+          grep newTag kustomize/base/hello-app/kustomization.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomize/base/hello-app/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "Тег уже актуален, коммит не нужен"
+            exit 0
+          fi
+          git commit -m "CD: bump hello-app image to ${{ github.event.workflow_run.head_sha }}"
+          git push

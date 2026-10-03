@@ -1,0 +1,80 @@
+# CI: lint + тесты + сборка и публикация образа в Docker Hub.
+# Триггер: push в main / PR с изменениями в app/ или Dockerfile.
+# Пуш образа - только из main (PR-ветки только собирают и тестируют).
+# Тег образа = git sha коммита; его подставляет в kustomize CD-пайплайн (cd.yml).
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "Dockerfile", ".github/workflows/ci.yml"]
+  pull_request:
+    paths: ["app/**", "Dockerfile", ".github/workflows/ci.yml"]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: docker.io/nikkiraii/hello-app
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Lint (ruff)
+        run: |
+          pip install -q ruff
+          ruff check app/ tests/
+
+      - name: Tests (pytest)
+        run: |
+          pip install -q -r app/requirements.txt pytest
+          pytest tests/ -v
+
+  build-push:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test in container
+        run: |
+          docker run -d --name smoke -p 8080:80 ${{ env.IMAGE }}:ci
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://localhost:8080/health
+          curl -fsS http://localhost:8080/hello | grep -q "Hello World!"
+          docker rm -f smoke
+
+      - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image (sha + latest)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha

@@ -1,0 +1,17 @@
+# Service - единая точка входа на поды приложения внутри кластера.
+# ClusterIP: доступен только внутри кластера, снаружи - через Gateway API.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app                     # метка нужна, чтобы ServiceMonitor нашёл Service
+spec:
+  type: ClusterIP
+  selector:
+    app: hello-app                     # на какие поды отправлять трафик
+  ports:
+    - name: http                       # имя порта (нужно для ServiceMonitor)
+      port: 80                         # порт сервиса
+      targetPort: 80                   # порт контейнера (см. deployment)

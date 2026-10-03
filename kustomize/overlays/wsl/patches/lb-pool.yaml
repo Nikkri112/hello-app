@@ -1,0 +1,7 @@
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: wsl-pool
+spec:
+  addresses:
+    - 172.26.31.191-172.26.31.254

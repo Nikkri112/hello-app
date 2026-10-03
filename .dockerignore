@@ -1,0 +1,13 @@
+# В образ попадает только app/ (см. Dockerfile) - остальное из контекста исключаем
+.git
+.github
+tests
+bootstrap
+kustomize
+manifests
+helm
+__pycache__
+*.md
+*.crt
+*.sh
+*.yaml

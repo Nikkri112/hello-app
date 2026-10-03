@@ -1,0 +1,15 @@
+# Сертификат для Grafana: cert-manager выпустит его через приватный CA
+# и положит в секрет grafana-tls (tls.crt/tls.key) - на него ссылается Gateway.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: monitoring
+spec:
+  secretName: grafana-tls
+  dnsNames:
+    - grafana.hello-app
+  duration: 8760h                        # 1 год
+  issuerRef:
+    name: grafana-ca
+    kind: ClusterIssuer
