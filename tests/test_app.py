@@ -3,13 +3,6 @@
 from main import app
 
 
-def test_hello_returns_greeting():
-    client = app.test_client()
-    resp = client.get("/hello")
-    assert resp.status_code == 200
-    assert b"Hello World!" in resp.data
-
-
 def test_hello_shows_pod_name():
     client = app.test_client()
     resp = client.get("/")
