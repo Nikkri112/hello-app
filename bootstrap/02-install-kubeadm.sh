@@ -9,10 +9,19 @@ K8S_VERSION="1.37.1"
 sudo apt-get update -qq
 sudo apt-get install -y -qq apt-transport-https ca-certificates curl gpg
 
+# ── модули ядра: загрузка при КАЖДОЙ загрузке системы (modprobe в сессии
+# не переживает ребут - на VM flannel падал именно из-за этого)
+cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+
 # ── sysctl-пререквизиты kubeadm: ip_forward + bridge-nf.
 # На WSL включены в 01-wsl-prereqs, на обычной Ubuntu/VM их нет -
-# без них preflight падает: /proc/sys/net/ipv4/ip_forward not set to 1
-sudo modprobe overlay br_netfilter 2>/dev/null || true
+# без них preflight падает: /proc/sys/net/ipv4/ip_forward not set to 1.
+# modprobe БЕЗ 2>/dev/null: скрытие ошибок маскировало незагруженный
+# br_netfilter (flannel: stat bridge-nf-call-iptables: no such file)
+sudo modprobe overlay br_netfilter
 cat <<EOF | sudo tee /etc/sysctl.d/99-k8s.conf
 net.ipv4.ip_forward = 1
 net.bridge.bridge-nf-call-iptables  = 1
