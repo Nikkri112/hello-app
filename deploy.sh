@@ -3,6 +3,11 @@
 # Запуск:  bash deploy.sh
 # Скрипт идемпотентен: повторный прогон не ломает ничего.
 # После перезапуска WSL прогон обновит пул MetalLB под новую подсеть.
+#
+# ВАЖНО про порядок: kustomize-apply идёт ПОСЛЕ kube-prometheus-stack,
+# потому что ServiceMonitor требует CRD monitoring.coreos.com (из chartа),
+# а ресурсы TLS-ингресса Grafana - namespace monitoring (создаёт helm).
+# На свежей машине apply ДО мониторинга падает (поймано на VM).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -22,14 +27,15 @@ echo "[0/7] Кластер доступен"
 # ══ 1. WSL-фиксы ════════════════════════════════════════════════════
 # Корень должен быть shared-mount, иначе node-exporter не стартует:
 #   'path "/" is mounted on "/" but it is not a shared or slave mount'
+# (на обычной Ubuntu/VM корень уже shared - команда безвредна)
 sudo mount --make-rshared /
 echo "[1/7] mount --make-rshared / применён"
 
 # ══ 2. MetalLB: установка (если ещё нет) ════════════════════════════
 if ! kubectl get ns metallb-system >/dev/null 2>&1; then
   kubectl apply -f "$ROOT/manifests/metallb-install/metallb-native.yaml"
-  kubectl -n metallb-system wait --for=condition=available deployment/controller --timeout=180s
-  kubectl -n metallb-system rollout status ds/speaker --timeout=180s
+  kubectl -n metallb-system wait --for=condition=available deployment/controller --timeout=600s
+  kubectl -n metallb-system rollout status ds/speaker --timeout=600s
   echo "[2/7] MetalLB установлен"
 else
   echo "[2/7] MetalLB уже установлен"
@@ -42,7 +48,7 @@ if ! kubectl get ns envoy-gateway-system >/dev/null 2>&1; then
     --version v1.9.2 \
     --values "$ROOT/helm/values-gateway.yaml" \
     -n envoy-gateway-system --create-namespace
-  kubectl -n envoy-gateway-system wait --for=condition=available deployment/envoy-gateway --timeout=300s
+  kubectl -n envoy-gateway-system wait --for=condition=available deployment/envoy-gateway --timeout=600s
   echo "[3/7] Envoy Gateway установлен"
 else
   echo "[3/7] Envoy Gateway уже установлен"
@@ -52,16 +58,14 @@ fi
 # Нужен ДО kustomize-apply: создаёт CRD Certificate/ClusterIssuer,
 # на которые ссылаются манифесты TLS-ингресса Grafana.
 if ! kubectl get ns cert-manager >/dev/null 2>&1; then
-  # --force-update: идемпотентно на свежей машине (без 2>/dev/null -
-  # скрытие ошибок маскирует проблемы, как было на VM)
   helm repo add --force-update jetstack https://charts.jetstack.io
   helm repo update >/dev/null
   helm upgrade --install cert-manager jetstack/cert-manager \
     --version v1.21.2 \
     --set crds.enabled=true \
     -n cert-manager --create-namespace
-  kubectl -n cert-manager wait --for=condition=available deployment/cert-manager --timeout=300s
-  kubectl -n cert-manager wait --for=condition=available deployment/cert-manager-webhook --timeout=300s
+  kubectl -n cert-manager wait --for=condition=available deployment/cert-manager --timeout=600s
+  kubectl -n cert-manager wait --for=condition=available deployment/cert-manager-webhook --timeout=600s
   echo "[4/7] cert-manager установлен"
 else
   echo "[4/7] cert-manager уже установлен"
@@ -88,25 +92,30 @@ spec:
 EOF
 echo "[5/7] Пул MetalLB: ${RANGE} (подсеть ноды ${NODE_CIDR})"
 
-# ══ 6. Свои манифесты одним kustomize ═══════════════════════════════
-# hello-app (deployment+svc+Gateway+HTTPRoute), filebeat, пул MetalLB,
-# TLS-ингресс Grafana (CA + сертификат + Gateway + HTTPRoute)
-kubectl apply -k "$ROOT/kustomize/overlays/wsl"
-echo "[6/7] Манифесты применены (kubectl apply -k overlays/wsl)"
-
-# ══ 7. Мониторинг: kube-prometheus-stack через helm (если ещё нет) ══
+# ══ 6. Мониторинг: kube-prometheus-stack через helm (если ещё нет) ══
+# Ставится ДО kustomize-apply: создаёт ns monitoring и CRD ServiceMonitor
 if ! kubectl get ns monitoring >/dev/null 2>&1; then
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+  helm repo add --force-update prometheus-community https://prometheus-community.github.io/helm-charts
   helm repo update >/dev/null
   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
     --version 91.8.2 \
     --values "$ROOT/helm/values-monitoring.yaml" \
     -n monitoring --create-namespace
-  kubectl -n monitoring wait --for=condition=available deployment/kube-prometheus-stack-operator --timeout=300s
-  echo "[7/7] kube-prometheus-stack установлен"
+  kubectl -n monitoring wait --for=condition=available deployment/kube-prometheus-stack-operator --timeout=600s
+  echo "[6/7] kube-prometheus-stack установлен"
 else
-  echo "[7/7] kube-prometheus-stack уже установлен"
+  echo "[6/7] kube-prometheus-stack уже установлен"
 fi
+
+# ══ 7. Свои манифесты одним kustomize ═══════════════════════════════
+# hello-app (deployment+svc+Gateway+HTTPRoute+ServiceMonitor+дашборд),
+# filebeat, пул MetalLB, TLS-ингресс Grafana (CA + сертификат + Gateway + HTTPRoute).
+# Перед apply ждём webhook'и (они валидируют Certificate/IPAddressPool):
+# контроллеры могли ещё тянуть образы с quay.io (медленно из РФ)
+kubectl -n cert-manager wait --for=condition=available deployment/cert-manager-webhook --timeout=600s
+kubectl -n metallb-system wait --for=condition=available deployment/controller --timeout=600s
+kubectl apply -k "$ROOT/kustomize/overlays/wsl"
+echo "[7/7] Манифесты применены (kubectl apply -k overlays/wsl)"
 
 # ══ Проверка здоровья ═══════════════════════════════════════════════
 echo
