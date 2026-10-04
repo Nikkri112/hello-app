@@ -52,7 +52,9 @@ fi
 # Нужен ДО kustomize-apply: создаёт CRD Certificate/ClusterIssuer,
 # на которые ссылаются манифесты TLS-ингресса Grafana.
 if ! kubectl get ns cert-manager >/dev/null 2>&1; then
-  helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
+  # --force-update: идемпотентно на свежей машине (без 2>/dev/null -
+  # скрытие ошибок маскирует проблемы, как было на VM)
+  helm repo add --force-update jetstack https://charts.jetstack.io
   helm repo update >/dev/null
   helm upgrade --install cert-manager jetstack/cert-manager \
     --version v1.21.2 \
