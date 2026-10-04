@@ -1,4 +1,6 @@
 # HTTPRoute - правило маршрутизации: путь / через hello-gateway -> сервис hello-app.
+# Без hostnames: маршрут матчит ЛЮБОЙ Host - приложение доступно по голому IP
+# (http://<node-ip>:<nodePort>) без hosts-записей.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -7,8 +9,6 @@ metadata:
 spec:
   parentRefs:
     - name: hello-gateway              # цепляемся к Gateway
-  hostnames:
-    - hello-app                        # приложение доступно по имени hello-app
   rules:
     - matches:
         - path:

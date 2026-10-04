@@ -113,7 +113,7 @@ bash bootstrap/05-install-flux.sh Nikkri112/hello-app main
 
 | Что                | Как                                                                     |
 |--------------------|-------------------------------------------------------------------------|
-| Приложение         | hosts: `172.26.20.204 hello-app` → `http://hello-app:<nodePort hello-gateway>`; порт — `kubectl -n envoy-gateway-system get svc` |
+| Приложение         | `http://<node-ip>:<nodePort hello-gateway>` — по голому IP, hosts-записи не нужны; порт — `kubectl -n envoy-gateway-system get svc` |
 | Grafana (HTTPS)    | hosts: `172.26.20.204 grafana.hello-app` → `https://grafana.hello-app:<nodePort grafana-gateway>` (443:3xxxx). CA из секрета `root-ca-secret` (ns cert-manager) — импортировать в доверенные Windows для зелёного замка |
 | Grafana (port-forward) | `kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring` → http://localhost:3000 (admin / пароль из секрета kube-prometheus-stack-grafana) |
 | Prometheus UI      | `kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring` → http://localhost:9090 |
