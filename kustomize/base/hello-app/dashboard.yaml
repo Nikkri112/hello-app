@@ -1,5 +1,3 @@
-# Дашборд hello-app для Grafana: провижинится sidecar'ом автоматически
-# (лейбл grafana_dashboard: "1", sidecar сканирует все namespace).
 apiVersion: v1
 kind: ConfigMap
 metadata:

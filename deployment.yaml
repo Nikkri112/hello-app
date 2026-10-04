@@ -1,5 +1,3 @@
-# Deployment - запускает и следит за подами с нашим Python REST API.
-# 2 копии (реплики) для надёжности.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,7 +19,6 @@ spec:
     spec:
       containers:
         - name: hello-app
-          # Публичный образ в Docker Hub (собран из этого репозитория)
           image: docker.io/nikkiraii/hello-app:2.1
           imagePullPolicy: IfNotPresent
 

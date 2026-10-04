@@ -60,12 +60,10 @@ Filebeat (daemonset): JSON-логи с k8s-метаданными
 └── deployment.yaml, service.yaml  # оригинальные манифесты (справочно, живут в kustomize/base)
 ```
 
-## Полное развёртывание с нуля (свежая WSL)
-
-Все bootstrap-скрипты выполняются ВНУТРИ WSL:
+## Полное развёртывание с нуля
 
 ```bash
-bash bootstrap/01-wsl-prereqs.sh     # затем wsl --shutdown из PowerShell!
+bash bootstrap/01-wsl-prereqs.sh     # для WSL машин
 bash bootstrap/02-install-kubeadm.sh
 bash bootstrap/03-cluster-init.sh    # кластер поднят
 bash bootstrap/04-install-helm.sh
@@ -80,9 +78,6 @@ bash verify.sh      # проверка здоровья: нода, поды, Gat
 ```
 
 ## CI/CD (GitHub Actions + Flux GitOps)
-
-Пайплайн полностью автоматический:
-
 ```
 git push в main (app/ или Dockerfile)
   → CI: ruff + pytest → docker build → smoke-тест в контейнере
@@ -123,8 +118,6 @@ bash bootstrap/05-install-flux.sh Nikkri112/hello-app main
 | Дашборд hello-app  | Grafana → Dashboards → «hello-app» (провижинится sidecar'ом из ConfigMap с лейблом `grafana_dashboard: "1"`) |
 | Статус GitOps      | `flux get kustomizations` и `flux get sources git` (внутри WSL)         |
 
-## Известные особенности WSL2
-
 1. **`mount --make-rshared /` обязателен** — иначе node-exporter падает с
    `path "/" is not a shared or slave mount`. Фикс применяется в рантайме
    на каждом прогоне `deploy.sh` (шаг 1).
@@ -134,8 +127,7 @@ bash bootstrap/05-install-flux.sh Nikkri112/hello-app main
    MetalLB из текущего IP ноды при каждом прогоне.
 3. **MetalLB L2-анонсы не доходят до Windows** в NAT-режиме WSL2 — external-IP
    балансировщика доступен изнутри WSL, а с Windows приложение доступно через
-   `http://<node-ip>:<nodePort>`. Для стабильного `localhost` на Windows:
-   `netsh interface portproxy add v4tov4 listenport=80 listenaddress=127.0.0.1 connectport=<nodePort> connectaddress=<node-ip>` (PowerShell от админа).
+   `http://<node-ip>:<nodePort>`. 
 4. **Swap** выключается в `.wslconfig` на Windows (`swap=0`), иначе kubeadm не стартует.
 5. **WSL VM засыпает при простое** — если в WSL нет активных процессов, VM выключается;
    при первом обращении поды кратковременно показывают `Unknown`, кластер поднимается

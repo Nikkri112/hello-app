@@ -1,5 +1,3 @@
-# Deployment - запускает и следит за подами с нашим Python REST API.
-# 2 копии (реплики) для надёжности.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,7 +17,6 @@ spec:
       labels:
         app: hello-app                 # метки должны совпадать с selector
     spec:
-      # Pod Security Standards (restricted): не-root юзер, seccomp RuntimeDefault
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -29,16 +26,13 @@ spec:
           type: RuntimeDefault
       containers:
         - name: hello-app
-          # Публичный образ в Docker Hub (собран из этого репозитория)
           image: docker.io/nikkiraii/hello-app:2.1
           imagePullPolicy: IfNotPresent
 
-          # Порт, который слушает приложение внутри контейнера
           ports:
             - name: http
               containerPort: 8080
 
-          # Проверка живости: если /health перестанет отвечать - под перезапустят
           livenessProbe:
             httpGet:
               path: /health
@@ -46,7 +40,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
 
-          # Проверка готовности: пока /health не ответит - трафик на под не пойдёт
           readinessProbe:
             httpGet:
               path: /health
@@ -54,15 +47,12 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 5
 
-          # Container-level security: без привилегий, read-only корень, без capabilities
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
 
-          # /tmp нужен gunicorn (heartbeat), /var/log/app - access-логи:
-          # корень read-only, поэтому оба - emptyDir
           env:
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
@@ -72,7 +62,6 @@ spec:
             - name: logs
               mountPath: /var/log/app
 
-          # Ограничения по ресурсам
           resources:
             requests:
               cpu: 50m

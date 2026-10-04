@@ -33,9 +33,6 @@ LOG_FILE = "/var/log/app/access.log"
 
 @app.after_request
 def log_request(response):
-    # Логируем каждый запрос в формате, похожем на nginx:
-    # IP - [дата] "GET /hello HTTP/1.1" 200 13
-    # Проверки Kubernetes (/health) и /metrics не логируем, чтобы не мусорить
     if request.path not in ("/health", "/metrics"):
         started = time.time()
         line = (
@@ -44,11 +41,7 @@ def log_request(response):
             f'{request.environ.get("SERVER_PROTOCOL", "HTTP/1.1")}" '
             f"{response.status_code} {response.calculate_content_length()}"
         )
-        # stdout -> попадает в kubectl logs и в /var/log/containers на ноде
         print(line, flush=True)
-        # файл внутри контейнера -> можно забрать сборщиком логов.
-        # Если каталог недоступен (нет прав/маунта) - не роняем запрос:
-        # лог в stdout всё равно пишется, метрики всё равно считаются
         try:
             os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
             with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -63,8 +56,6 @@ def log_request(response):
 @app.route("/")
 @app.route("/hello")
 def hello():
-    # Главный проверяемый ответ: Hello World!
-    # HOSTNAME в поде Kubernetes = имя пода
     pod = os.environ.get("HOSTNAME", "unknown")
     return f"Привет мир! (pod: {pod})!!!\n"
 
