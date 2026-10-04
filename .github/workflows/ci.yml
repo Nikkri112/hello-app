@@ -56,7 +56,7 @@ jobs:
 
       - name: Smoke test in container
         run: |
-          docker run -d --name smoke -p 8080:80 ${{ env.IMAGE }}:ci
+          docker run -d --name smoke -p 8080:8080 ${{ env.IMAGE }}:ci
           # Ждём готовности gunicorn: docker-proxy сбрасывает соединение,
           # пока бэкенд не поднялся (это не "refused", обычный --retry не ретраит)
           for i in $(seq 1 30); do

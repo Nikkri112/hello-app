@@ -19,6 +19,14 @@ spec:
       labels:
         app: hello-app                 # метки должны совпадать с selector
     spec:
+      # Pod Security Standards (restricted): не-root юзер, seccomp RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000                        # emptyDir-тома получают группу 1000 (право писать)
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: hello-app
           # Публичный образ в Docker Hub (собран из этого репозитория)
@@ -28,13 +36,13 @@ spec:
           # Порт, который слушает приложение внутри контейнера
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
 
           # Проверка живости: если /health перестанет отвечать - под перезапустят
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
 
@@ -42,9 +50,27 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 3
             periodSeconds: 5
+
+          # Container-level security: без привилегий, read-only корень, без capabilities
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          # /tmp нужен gunicorn (heartbeat), /var/log/app - access-логи:
+          # корень read-only, поэтому оба - emptyDir
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /var/log/app
 
           # Ограничения по ресурсам
           resources:
@@ -54,3 +80,8 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}

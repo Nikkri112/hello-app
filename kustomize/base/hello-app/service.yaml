@@ -13,5 +13,5 @@ spec:
     app: hello-app                     # на какие поды отправлять трафик
   ports:
     - name: http                       # имя порта
-      port: 80                         # порт сервиса
-      targetPort: 80                   # порт контейнера (см. deployment)
+      port: 80                         # порт сервиса (его видят Gateway и ServiceMonitor)
+      targetPort: 8080                 # порт контейнера (см. deployment)

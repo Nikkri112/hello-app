@@ -1,0 +1,26 @@
+# NetworkPolicy: трафик на поды hello-app - только от envoy-прокси гейтвея.
+# ВАЖНО: flannel НЕ исполняет NetworkPolicy (нет policy-движка) - сейчас политика
+# декларативна и начнёт действовать при смене CNI на calico/cilium
+# (например, на VPS). kubelet-пробы от этого не ломаются.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hello-app
+  namespace: hello-app
+spec:
+  podSelector:
+    matchLabels:
+      app: hello-app
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: envoy-gateway-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: proxy
+      ports:
+        - protocol: TCP
+          port: 8080
