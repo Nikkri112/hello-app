@@ -2,31 +2,73 @@
 # Шаг 5. Полное развёртывание стека на работающем kubeadm-кластере.
 # Запуск:  bash deploy.sh
 # Скрипт идемпотентен: повторный прогон не ломает ничего.
-# После перезапуска WSL прогон обновит пул MetalLB под новую подсеть.
+#
+# Ожидания терпеливые: образы с quay.io из РФ качаются медленно - вместо
+# падения по таймауту скрипт ждёт до 30 мин на компонент (с прогрессом),
+# таймаут = предупреждение, а не FAIL. kustomize-apply ретраится сам
+# (webhook-валидация переживает медленные образы).
 #
 # ВАЖНО про порядок: kustomize-apply идёт ПОСЛЕ kube-prometheus-stack,
 # потому что ServiceMonitor требует CRD monitoring.coreos.com (из chartа),
 # а ресурсы TLS-ингресса Grafana - namespace monitoring (создаёт helm).
 # На свежей машине apply ДО мониторинга падает (поймано на VM).
+#
+# После перезапуска WSL прогон обновит пул MetalLB под новую подсеть.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# ══ Хелперы ожидания (не убивают скрипт) ════════════════════════════
+# Каждая проверка блокирует до 30с; цикл - до ~30 мин с прогрессом;
+# при исчерпании дедлайна - [WARN] и return 1 (вызывается через || true)
+wait_available() {  # wait_available <ns> <deployment> <подпись>
+  local ns="$1" name="$2" label="$3" n=0
+  until kubectl -n "$ns" wait --for=condition=available "deployment/$name" --timeout=30s >/dev/null 2>&1; do
+    n=$((n+1))
+    if [ $((n % 6)) -eq 0 ]; then
+      echo "    ... $label ждём ~$((n/2)) мин (образы могут качаться с quay.io)"
+    fi
+    if [ "$n" -ge 60 ]; then
+      echo "    [WARN] $label не готов за ~30 мин — продолжаю (verify.sh покажет состояние)"
+      return 1
+    fi
+    sleep 5
+  done
+  echo "    [OK] $label"
+}
+wait_rollout() {  # wait_rollout <ns> <target> <подпись>
+  local ns="$1" target="$2" label="$3" n=0
+  until kubectl -n "$ns" rollout status "$target" --timeout=30s >/dev/null 2>&1; do
+    n=$((n+1))
+    if [ $((n % 6)) -eq 0 ]; then
+      echo "    ... $label ждём ~$((n/2)) мин"
+    fi
+    if [ "$n" -ge 60 ]; then
+      echo "    [WARN] $label не готов за ~30 мин — продолжаю"
+      return 1
+    fi
+    sleep 5
+  done
+  echo "    [OK] $label"
+}
 
 # ══ 0. Предусловия ══════════════════════════════════════════════════
 command -v kubectl >/dev/null || { echo "FAIL: kubectl не найден (сначала bootstrap/02)"; exit 1; }
 command -v helm    >/dev/null || { echo "FAIL: helm не найден (сначала bootstrap/04)"; exit 1; }
 # WSL среда нестабильна: kubelet может кратковременно рестартовать вместе со
-# статик-подами (API-сервер мигает). Ждём с ретраями до 2 минут вместо мгновенного падения.
-for i in $(seq 1 24); do
-  kubectl get nodes >/dev/null 2>&1 && break
-  sleep 5
+# статик-подами (API-сервер мигает). Ждём с ретраями до 6 минут.
+n=0
+until kubectl get nodes >/dev/null 2>&1; do
+  n=$((n+1))
+  if [ "$n" -ge 36 ]; then
+    echo "FAIL: кластер недоступен за 6 минут (сначала bootstrap/03)"; exit 1
+  fi
+  sleep 10
 done
-kubectl get nodes >/dev/null 2>&1 || { echo "FAIL: кластер недоступен (сначала bootstrap/03)"; exit 1; }
 echo "[0/7] Кластер доступен"
 
 # ══ 1. WSL-фиксы ════════════════════════════════════════════════════
-# Корень должен быть shared-mount, иначе node-exporter не стартует:
-#   'path "/" is mounted on "/" but it is not a shared or slave mount'
+# Корень должен быть shared-mount, иначе node-exporter не стартует.
 # (на обычной Ubuntu/VM корень уже shared - команда безвредна)
 sudo mount --make-rshared /
 echo "[1/7] mount --make-rshared / применён"
@@ -34,12 +76,10 @@ echo "[1/7] mount --make-rshared / применён"
 # ══ 2. MetalLB: установка (если ещё нет) ════════════════════════════
 if ! kubectl get ns metallb-system >/dev/null 2>&1; then
   kubectl apply -f "$ROOT/manifests/metallb-install/metallb-native.yaml"
-  kubectl -n metallb-system wait --for=condition=available deployment/controller --timeout=600s
-  kubectl -n metallb-system rollout status ds/speaker --timeout=600s
-  echo "[2/7] MetalLB установлен"
-else
-  echo "[2/7] MetalLB уже установлен"
 fi
+wait_available metallb-system controller "MetalLB controller" || true
+wait_rollout   metallb-system ds/speaker  "MetalLB speaker"    || true
+echo "[2/7] MetalLB"
 
 # ══ 3. Envoy Gateway: установка через helm (если ещё нет) ═══════════
 # Ставится ДО kustomize-apply: он создаёт CRD Gateway, нужные для gateway.yaml
@@ -48,11 +88,9 @@ if ! kubectl get ns envoy-gateway-system >/dev/null 2>&1; then
     --version v1.9.2 \
     --values "$ROOT/helm/values-gateway.yaml" \
     -n envoy-gateway-system --create-namespace
-  kubectl -n envoy-gateway-system wait --for=condition=available deployment/envoy-gateway --timeout=600s
-  echo "[3/7] Envoy Gateway установлен"
-else
-  echo "[3/7] Envoy Gateway уже установлен"
 fi
+wait_available envoy-gateway-system envoy-gateway "Envoy Gateway" || true
+echo "[3/7] Envoy Gateway"
 
 # ══ 4. cert-manager: установка через helm (если ещё нет) ════════════
 # Нужен ДО kustomize-apply: создаёт CRD Certificate/ClusterIssuer,
@@ -64,12 +102,10 @@ if ! kubectl get ns cert-manager >/dev/null 2>&1; then
     --version v1.21.2 \
     --set crds.enabled=true \
     -n cert-manager --create-namespace
-  kubectl -n cert-manager wait --for=condition=available deployment/cert-manager --timeout=600s
-  kubectl -n cert-manager wait --for=condition=available deployment/cert-manager-webhook --timeout=600s
-  echo "[4/7] cert-manager установлен"
-else
-  echo "[4/7] cert-manager уже установлен"
 fi
+wait_available cert-manager cert-manager         "cert-manager"         || true
+wait_available cert-manager cert-manager-webhook "cert-manager webhook" || true
+echo "[4/7] cert-manager"
 
 # ══ 5. Пул MetalLB: вычислить из текущей подсети WSL ════════════════
 # Подсеть WSL меняется после каждого перезапуска, поэтому диапазон
@@ -101,22 +137,33 @@ if ! kubectl get ns monitoring >/dev/null 2>&1; then
     --version 91.8.2 \
     --values "$ROOT/helm/values-monitoring.yaml" \
     -n monitoring --create-namespace
-  kubectl -n monitoring wait --for=condition=available deployment/kube-prometheus-stack-operator --timeout=600s
-  echo "[6/7] kube-prometheus-stack установлен"
-else
-  echo "[6/7] kube-prometheus-stack уже установлен"
 fi
+wait_available monitoring kube-prometheus-stack-operator "Prometheus operator" || true
+echo "[6/7] kube-prometheus-stack"
 
-# ══ 7. Свои манифесты одним kustomize ═══════════════════════════════
+# ══ 7. Свои манифесты одним kustomize (+ авто-ретраи) ═══════════════
 # hello-app (deployment+svc+Gateway+HTTPRoute+ServiceMonitor+дашборд),
 # filebeat, пул MetalLB, TLS-ингресс Grafana (CA + сертификат + Gateway + HTTPRoute).
-# Перед apply ждём webhook'и (они валидируют Certificate/IPAddressPool):
-# контроллеры могли ещё тянуть образы с quay.io (медленно из РФ)
-kubectl -n cert-manager wait --for=condition=available deployment/cert-manager-webhook --timeout=600s
-kubectl -n metallb-system wait --for=condition=available deployment/controller --timeout=600s
-kubectl apply -k "$ROOT/kustomize/overlays/wsl"
+# Certificate/IPAddressPool валидируются webhook'ами - если контроллер ещё
+# тянет образ, apply падает; ретраи это переживают
+ok=0
+for i in 1 2 3 4 5; do
+  if kubectl apply -k "$ROOT/kustomize/overlays/wsl" >/tmp/kustomize-apply.log 2>&1; then
+    ok=1
+    break
+  fi
+  echo "    apply не прошёл (попытка $i/5), последние ошибки:"
+  tail -4 /tmp/kustomize-apply.log
+  echo "    повтор через 30с..."
+  sleep 30
+done
+if [ "$ok" != 1 ]; then
+  echo "FAIL: kustomize-apply не прошёл за 5 попыток, последние ошибки:"
+  tail -15 /tmp/kustomize-apply.log
+  exit 1
+fi
 echo "[7/7] Манифесты применены (kubectl apply -k overlays/wsl)"
 
-# ══ Проверка здоровья ═══════════════════════════════════════════════
+# ══ Проверка здоровья (незавоалидный хвост: результат в выводе) ═════
 echo
-bash "$ROOT/verify.sh"
+bash "$ROOT/verify.sh" || true
