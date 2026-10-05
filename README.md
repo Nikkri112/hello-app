@@ -1,8 +1,21 @@
-# k8s-homelab — Kubernetes-кластер в WSL с полной автоматизацией
+# hello-app — разворачиваемое веб-приложение с продакшен-обвязкой
 
-Решение разворачивает в WSL2 (Ubuntu-24.04) kubeadm-кластер с приложением,
-Gateway API (Envoy), балансировщиком (MetalLB), мониторингом (kube-prometheus-stack),
-сбором логов (Filebeat) и полным CI/CD (GitHub Actions + Flux GitOps).
+Полноценное k8s-приложение «из коробки»: сервис с Gateway API (Envoy),
+балансировщиком (MetalLB), мониторингом (Prometheus/Grafana), сбором логов
+(Filebeat) и полным CI/CD (GitHub Actions + Flux GitOps). Разворачивается
+на любой свежей Ubuntu/WSL-машине одной кнопкой.
+
+## Функционал приложения
+
+| Эндпоинт | Что делает |
+|----------|------------|
+| `GET /` | JSON с приветствием и именем пода, который ответил |
+| `GET /healthz` | health-check (используется liveness/readiness-пробами) |
+| `GET /metrics` | метрики Prometheus: `app_http_requests_total`, гистограмма задержек |
+
+Безопасность: запуск не от root (UID 1000), read-only корневая ФС (запись
+только в `/tmp` и `/var/log/app`), seccomp RuntimeDefault, drop ALL capabilities,
+NetworkPolicy на входящий трафик.
 
 ## Архитектура
 
@@ -20,25 +33,25 @@ GitHub Actions CD: подставляет тег образа в kustomize, ко
 Flux (в кластере): sync git → kustomize/overlays/wsl
    │
    ▼
-Envoy Gateway (Gateway API): HTTPRoute hello-app (HTTP) и grafana.hello-app (HTTPS/TLS)
+Envoy Gateway (Gateway API): HTTPRoute → приложение (HTTP)
 Prometheus: собирает метрики приложения через ServiceMonitor
+Grafana: дашборд «hello-app» провижинится sidecar'ом автоматически
 Filebeat (daemonset): JSON-логи с k8s-метаданными
 ```
 
-- Весь свой стек описан декларативно в kustomize (base + overlay WSL); helm-чарты
-  (Envoy Gateway, cert-manager, kube-prometheus-stack) ставит `deploy.sh` с фиксированными версиями.
-- Flux применяет kustomize-overlay и следит за здоровьем Deployment hello-app (health check в Kustomization).
-- Метрики приложения (`app_http_requests_total`, гистограмма задержек) собираются
-  Prometheus'ом через ServiceMonitor — лейбл `release: kube-prometheus-stack` обязателен
+- Стек описан декларативно в kustomize (base + overlay среды); helm-чарты
+  (Envoy Gateway, cert-manager, kube-prometheus-stack) ставит `deploy.sh`
+  с фиксированными версиями.
+- Flux применяет overlay и следит за здоровьем Deployment hello-app
+  (health check в Kustomization).
+- ServiceMonitor помечен лейблом `release: kube-prometheus-stack`
   (селектор Prometheus из helm-дефолтов).
-- Дашборд «hello-app» в Grafana провижинится sidecar'ом автоматически (ConfigMap
-  с лейблом `grafana_dashboard: "1"`, sidecar сканирует все namespace).
 
 ## Структура
 
 ```
-├── bootstrap/                     # ОДИН РАЗ на свежей WSL (внутри WSL)
-│   ├── 01-wsl-prereqs.sh          # systemd, swap off, mount --make-rshared /
+├── bootstrap/                     # ОДИН РАЗ на свежей машине
+│   ├── 01-wsl-prereqs.sh          # только для WSL: systemd, swap off, rshared
 │   ├── 02-install-kubeadm.sh      # containerd, kubeadm/kubelet/kubectl v1.37.1
 │   ├── 03-cluster-init.sh         # kubeadm init + flannel CNI
 │   ├── 04-install-helm.sh         # helm v3.22.0
@@ -48,7 +61,7 @@ Filebeat (daemonset): JSON-логи с k8s-метаданными
 │   └── flannel/                   # вендоренный манифест flannel
 ├── kustomize/
 │   ├── base/                      # hello-app (+ServiceMonitor+дашборд), filebeat, MetalLB-пул, TLS-ингресс Grafana
-│   └── overlays/wsl/              # слой среды WSL (патч пула под текущую подсеть)
+│   └── overlays/wsl/              # слой среды (патч пула под текущую подсеть)
 ├── helm/
 │   ├── values-monitoring.yaml     # values kube-prometheus-stack (дефолты)
 │   └── values-gateway.yaml        # values envoy-gateway (дефолты)
@@ -60,24 +73,22 @@ Filebeat (daemonset): JSON-логи с k8s-метаданными
 └── deployment.yaml, service.yaml  # оригинальные манифесты (справочно, живут в kustomize/base)
 ```
 
-## Полное развёртывание с нуля
+## Развёртывание
 
 ```bash
-bash bootstrap/01-wsl-prereqs.sh     # для WSL машин
+bash bootstrap/01-wsl-prereqs.sh     # только для WSL-машин
 bash bootstrap/02-install-kubeadm.sh
 bash bootstrap/03-cluster-init.sh    # кластер поднят
 bash bootstrap/04-install-helm.sh
 bash deploy.sh                       # весь стек: MetalLB, Gateway, приложение, мониторинг, логи
+bash verify.sh                       # проверка здоровья: нода, поды, Gateway, приложение, метрики, логи
 ```
 
-## Повторный запуск / повседневное использование
-
-```bash
-bash deploy.sh      # идемпотентен; после перезапуска WSL обновит пул MetalLB
-bash verify.sh      # проверка здоровья: нода, поды, Gateway, приложение, метрики, логи
-```
+`deploy.sh` идемпотентен: повторный запуск докатит недостающее и обновит
+пул MetalLB под текущую подсеть.
 
 ## CI/CD (GitHub Actions + Flux GitOps)
+
 ```
 git push в main (app/ или Dockerfile)
   → CI: ruff + pytest → docker build → smoke-тест в контейнере
@@ -87,15 +98,14 @@ git push в main (app/ или Dockerfile)
   → Flux: применяет в кластер за ~1,5 минуты, поды перекатываются
 ```
 
-Защита от мусора:
 - тесты упали → образ не публикуется, CD не запускается, кластер не трогается;
 - CD-коммит меняет только `kustomize/` → CI на него не реагирует (нет цикла);
 - PR-ветки: только линт+тесты+сборка, без публикации и деплоя.
 
-Секреты (Settings → Secrets and variables → Actions): `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
-(Personal access token с правами Read & Write).
+Секреты (Settings → Secrets and variables → Actions): `DOCKERHUB_USERNAME`,
+`DOCKERHUB_TOKEN` (Personal access token с правами Read & Write).
 
-Первичная привязка Flux к репо (один раз, внутри WSL):
+Первичная привязка Flux к репо (один раз, в кластере):
 
 ```bash
 bash bootstrap/05-install-flux.sh Nikkri112/hello-app main
@@ -103,35 +113,6 @@ bash bootstrap/05-install-flux.sh Nikkri112/hello-app main
 
 Откат: revert CD-коммита (Flux вернёт предыдущий тег образа) либо
 `kubectl rollout undo -n hello-app deploy/hello-app`.
-
-## Что где смотреть
-
-| Что                | Как                                                                     |
-|--------------------|-------------------------------------------------------------------------|
-| Приложение         | `http://<node-ip>:<nodePort hello-gateway>` — по голому IP, hosts-записи не нужны; порт — `kubectl -n envoy-gateway-system get svc` |
-| Grafana (HTTPS)    | hosts: `172.26.20.204 grafana.hello-app` → `https://grafana.hello-app:<nodePort grafana-gateway>` (443:3xxxx). CA из секрета `root-ca-secret` (ns cert-manager) — импортировать в доверенные Windows для зелёного замка |
-| Grafana (port-forward) | `kubectl port-forward svc/kube-prometheus-stack-grafana 3000:80 -n monitoring` → http://localhost:3000 (admin / пароль из секрета kube-prometheus-stack-grafana) |
-| Prometheus UI      | `kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring` → http://localhost:9090 |
-| Логи приложения    | `kubectl logs -n logging ds/filebeat -f` (JSON-записи с k8s-метаданными) |
-| Логи пода напрямую | `kubectl logs -n hello-app deploy/hello-app`                            |
-| Метрики приложения | `kubectl -n monitoring get --raw '/api/v1/namespaces/monitoring/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1/query?query=app_http_requests_total'` (в поде Prometheus нет curl/sh — exec не сработает, используйте API-proxy) |
-| Дашборд hello-app  | Grafana → Dashboards → «hello-app» (провижинится sidecar'ом из ConfigMap с лейблом `grafana_dashboard: "1"`) |
-| Статус GitOps      | `flux get kustomizations` и `flux get sources git` (внутри WSL)         |
-
-1. **`mount --make-rshared /` обязателен** — иначе node-exporter падает с
-   `path "/" is not a shared or slave mount`. Фикс применяется в рантайме
-   на каждом прогоне `deploy.sh` (шаг 1).
-   **НЕ прописывайте его в `/etc/wsl.conf` `[boot] command`** — это роняет
-   WSL VM (перезапуск каждые ~3 минуты, проверено).
-2. **Подсеть WSL меняется после перезапуска** — `deploy.sh` пересчитывает пул
-   MetalLB из текущего IP ноды при каждом прогоне.
-3. **MetalLB L2-анонсы не доходят до Windows** в NAT-режиме WSL2 — external-IP
-   балансировщика доступен изнутри WSL, а с Windows приложение доступно через
-   `http://<node-ip>:<nodePort>`. 
-4. **Swap** выключается в `.wslconfig` на Windows (`swap=0`), иначе kubeadm не стартует.
-5. **WSL VM засыпает при простое** — если в WSL нет активных процессов, VM выключается;
-   при первом обращении поды кратковременно показывают `Unknown`, кластер поднимается
-   сам за ~1 минуту (systemd стартует сервисы заново). `deploy.sh` и Flux это переживают.
 
 ## Версии компонентов
 
